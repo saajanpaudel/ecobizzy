@@ -173,6 +173,12 @@ def calculate_scope1(therms):
 def index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/logo-white.png')
+def logo():
+    # Named explicitly rather than a catch-all root route, which would happily
+    # serve .env and app.py over HTTP.
+    return send_from_directory('.', 'logo-white.png')
+
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     try:
