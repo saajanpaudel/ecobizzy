@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eco Bizzy — Emissions Calculator</title>
+    <style>
+        :root {
+            --bg: #192d28;
+            --surface: #223a33;
+            --recessed: #142521;
+            --border: #2f4a42;
+            --text: #ffffff;
+            --muted: #a1b7af;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text);
+        }
+        .header p {
+            color: var(--muted);
+            font-size: 1rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 10px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: var(--recessed);
+        }
+        .upload-zone:hover {
+            border-color: var(--text);
+            background: var(--surface);
+        }
+        .upload-zone.dragover {
+            border-color: var(--text);
+            background: var(--surface);
+        }
+        
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        .upload-text h3 {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+        .upload-text p {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        input[type="file"] { display: none; }
+
+        .button {
+            background: var(--text);
+            color: var(--bg);
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: opacity 0.3s ease;
+            margin-top: 1rem;
+        }
+        .button:hover { opacity: 0.9; }
+        .button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--muted);
+        }
+        .spinner {
+            border: 2px solid var(--border);
+            border-top: 2px solid var(--text);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .results {
+            display: none;
+        }
+        .results.show { display: block; }
+        
+        .metric {
+            background: var(--recessed);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border-left: 3px solid var(--text);
+        }
+        .metric-label {
+            color: var(--muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .metric-unit {
+            color: var(--muted);
+            font-size: 1rem;
+            font-weight: 400;
+        }
+        
+        .breakdown {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        .scope-box {
+            background: var(--recessed);
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .scope-box h4 {
+            color: var(--muted);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        .scope-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .error {
+            background: #3b1f1f;
+            border: 1px solid #6b2f2f;
+            color: #f3c9c9;
+            padding: 1.5rem;
+            border-radius: 8px;
+            display: none;
+        }
+        .error.show { display: block; }
+
+        .file-name {
+            color: var(--text);
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Eco Bizzy</h1>
+            <p>Extract emissions from your utility bills in seconds</p>
+        </div>
+        
+        <div class="card">
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-text">
+                    <div class="upload-icon">📄</div>
+                    <h3>Upload your utility bill</h3>
+                    <p>PDF, PNG, or JPEG — drag and drop or click to select</p>
+                </div>
+                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg">
+                <button class="button" id="selectBtn">Choose file</button>
+                <div class="file-name" id="fileName"></div>
+            </div>
+        </div>
+        
+        <div class="error" id="error"></div>
+        
+        <div class="loading" id="loading" style="display:none;">
+            <div class="spinner"></div>
+            <p>Analyzing your bill with AI...</p>
+        </div>
+        
+        <div class="results" id="results">
+            <div class="card">
+                <div class="metric">
+                    <div class="metric-label">Total CO₂e Emissions</div>
+                    <div class="metric-value">
+                        <span id="totalEmissions">0.0000</span>
+                        <span class="metric-unit">metric tonnes</span>
+                    </div>
+                </div>
+                
+                <div class="breakdown">
+                    <div class="scope-box">
+                        <h4>Scope 1 (Natural Gas)</h4>
+                        <div class="scope-value" id="scope1">0.0000</div>
+                        <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem;">metric tonnes</p>
+                    </div>
+                    <div class="scope-box">
+                        <h4>Scope 2 (Electricity)</h4>
+                        <div class="scope-value" id="scope2">0.0000</div>
+                        <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem;">metric tonnes</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 style="margin-bottom: 1.5rem; color: var(--text);">Bill Details</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <div>
+                        <p style="color: var(--muted); font-size: 0.9rem;">Company</p>
+                        <p style="color: var(--text); font-weight: 500;" id="companyName">—</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--muted); font-size: 0.9rem;">Account</p>
+                        <p style="color: var(--text); font-weight: 500;" id="account">—</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--muted); font-size: 0.9rem;">Electricity</p>
+                        <p style="color: var(--text); font-weight: 500;" id="kwh">—</p>
+                    </div>
+                    <div>
+                        <p style="color: var(--muted); font-size: 0.9rem;">Natural Gas</p>
+                        <p style="color: var(--text); font-weight: 500;" id="therms">—</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const selectBtn = document.getElementById('selectBtn');
+    const loading = document.getElementById('loading');
+    const results = document.getElementById('results');
+    const error = document.getElementById('error');
+    const fileName = document.getElementById('fileName');
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            handleFile(e.target.files[0]);
+        }
+    });
+
+    async function handleFile(file) {
+        error.classList.remove('show');
+        results.classList.remove('show');
+        loading.style.display = 'block';
+        fileName.textContent = `Selected: ${file.name}`;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/api/analyze', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Analysis failed');
+            }
+
+            displayResults(data);
+        } catch (e) {
+            showError(e.message);
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+
+    function displayResults(data) {
+        const total = data.total_co2e_tonnes || 0;
+        const scope1 = data.scope_1?.total_co2e_tonnes || 0;
+        const scope2 = data.scope_2?.total_co2e_tonnes || 0;
+        const bill = data.bill_data || {};
+
+        document.getElementById('totalEmissions').textContent = total.toFixed(4);
+        document.getElementById('scope1').textContent = scope1.toFixed(4);
+        document.getElementById('scope2').textContent = scope2.toFixed(4);
+        document.getElementById('companyName').textContent = bill.company_name || '—';
+        document.getElementById('account').textContent = bill.account_number || '—';
+        document.getElementById('kwh').textContent = bill.electricity_kwh ? `${bill.electricity_kwh.toLocaleString()} kWh` : '—';
+        document.getElementById('therms').textContent = bill.natural_gas_therms ? `${bill.natural_gas_therms.toLocaleString()} therms` : '—';
+
+        results.classList.add('show');
+    }
+
+    function showError(message) {
+        error.textContent = message;
+        error.classList.add('show');
+    }
+</script>

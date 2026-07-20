@@ -1,0 +1,9 @@
+PACIFIC GAS AND ELECTRIC COMPANY
+Customer: Acme Manufacturing
+Account: 1234-5678
+Statement Date: July 2026
+
+Total Electricity Usage: 142,880 kWh
+Total Natural Gas Usage: 9,640 therms
+
+Amount Due: $8,432.50
