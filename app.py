@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 20 MB upload cap
 client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 # Your EPA emission factors (CAMX - California)
@@ -220,4 +221,8 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Railway injects PORT; debug must stay off in production (the Werkzeug
+    # debugger exposes an arbitrary-code-execution console).
+    port = int(os.getenv('PORT', 5000))
+    debug = os.getenv('FLASK_DEBUG', '').lower() in ('1', 'true')
+    app.run(host='0.0.0.0', port=port, debug=debug)
