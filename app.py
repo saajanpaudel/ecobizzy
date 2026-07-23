@@ -4,6 +4,7 @@ import os
 import base64
 import json
 from datetime import datetime
+from xml.sax.saxutils import escape as xml_escape
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -217,9 +218,19 @@ def calculate_scope1(therms):
     }
 
 
+def _clean_utility(value):
+    """Strip trailing punctuation/whitespace off the utility name (e.g. 'PG&E;').
+    Applied server-side so the results page and the PDF stay consistent."""
+    if not isinstance(value, str):
+        return value
+    cleaned = value.strip().rstrip(";,. ").strip()
+    return cleaned or None
+
+
 def build_result(bill_data):
     """Assemble the full API payload from extracted bill data. Shared by the
     upload, sample, and report endpoints so the numbers can never diverge."""
+    bill_data["utility"] = _clean_utility(bill_data.get("utility"))
     kwh = bill_data.get("electricity_kwh")
     therms = bill_data.get("natural_gas_therms")
 
@@ -251,6 +262,37 @@ def _fmt(n, dp=2):
     if n is None:
         return "—"
     return f"{n:,.{dp}f}"
+
+
+def _parse_date(s):
+    """Best-effort parse of a bill date string into a datetime, else None."""
+    if not s or not isinstance(s, str):
+        return None
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%B %d, %Y', '%b %d, %Y'):
+        try:
+            return datetime.strptime(s.strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _fmt_date(s):
+    """ISO or messy date string -> 'June 12, 2026'; unparseable input passes through."""
+    d = _parse_date(s)
+    if not d:
+        return s
+    return f"{d.strftime('%B')} {d.day}, {d.year}"
+
+
+def _fmt_period(start, end):
+    """Format a date range as 'June 12 - July 11, 2026' (en dash, year stated once
+    when both dates share a year). Returns None if the range can't be parsed."""
+    ds, de = _parse_date(start), _parse_date(end)
+    if not (ds and de):
+        return None
+    if ds.year == de.year:
+        return f"{ds.strftime('%B')} {ds.day} – {de.strftime('%B')} {de.day}, {de.year}"
+    return f"{_fmt_date(start)} – {_fmt_date(end)}"
 
 
 def generate_report_pdf(result):
@@ -289,13 +331,9 @@ def generate_report_pdf(result):
     derived = result.get('derived') or {}
     company = (bill.get('company_name') or 'Customer').strip()
 
-    ps, pe = bill.get('period_start'), bill.get('period_end')
-    if ps and pe:
-        period = f"{ps} to {pe}"
-    elif bill.get('statement_date'):
-        period = f"Statement date: {bill.get('statement_date')}"
-    else:
-        period = "Not specified on bill"
+    period = _fmt_period(bill.get('period_start'), bill.get('period_end'))
+    if not period and bill.get('statement_date'):
+        period = _fmt_date(bill.get('statement_date'))
 
     body = ParagraphStyle('body', fontName='Helvetica', fontSize=10, textColor=DARK, leading=14)
     h2 = ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=13, textColor=GREEN,
@@ -325,19 +363,40 @@ def generate_report_pdf(result):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
     ]))
     story.append(header)
-    story.append(Spacer(1, 18))
+    story.append(Spacer(1, 20))
 
-    story.append(Paragraph(f"Emissions Report - {company}",
-                 ParagraphStyle('rt', fontName='Helvetica-Bold', fontSize=18, textColor=GREEN)))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(f"Reporting period: {period}", small))
-    if bill.get('utility') or bill.get('account_number'):
-        meta = " | ".join(filter(None, [
-            bill.get('utility'),
-            f"Account {bill.get('account_number')}" if bill.get('account_number') else None,
-        ]))
-        story.append(Paragraph(meta, small))
-    story.append(Spacer(1, 14))
+    # "Prepared for" record: label column muted, value column dark, each on its
+    # own row. A table keeps the labels and values on shared baselines with no
+    # risk of the lines colliding.
+    kv_label = ParagraphStyle('kvl', fontName='Helvetica', fontSize=9.5,
+                              textColor=MUTED, leading=15)
+    kv_value = ParagraphStyle('kvv', fontName='Helvetica-Bold', fontSize=10,
+                              textColor=DARK, leading=15)
+
+    def kv(lbl, val):
+        # Escape values: reportlab parses Paragraph text as XML markup, so a bare
+        # '&' (e.g. "PG&E") would be mangled into "PG&E;" without escaping.
+        return [Paragraph(lbl, kv_label), Paragraph(xml_escape(str(val)), kv_value)]
+
+    info_rows = [kv('Prepared for', company)]
+    if bill.get('account_number'):
+        info_rows.append(kv('Account', bill['account_number']))
+    if bill.get('utility'):
+        info_rows.append(kv('Utility', bill['utility']))
+    if period:
+        info_rows.append(kv('Reporting period', period))
+    info_rows.append(kv('Prepared by', 'Eco Bizzy | ecobizzy.com'))
+
+    info = Table(info_rows, colWidths=[1.5 * inch, 5.8 * inch])
+    info.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ]))
+    story.append(info)
+    story.append(Spacer(1, 18))
 
     # --- Executive summary ---
     total_t = result.get('total_co2e_tonnes')
@@ -424,6 +483,20 @@ def generate_report_pdf(result):
     story.append(Paragraph(
         "CO2e = sum of (activity x emission factor x GWP). Electricity uses the EPA "
         "eGRID CAMX subregion (California) location-based method.", small))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(
+        "This report follows the GHG Protocol Corporate Accounting and Reporting Standard.",
+        ParagraphStyle('ghg', fontName='Helvetica-Oblique', fontSize=8.5,
+                       textColor=MUTED, leading=12)))
+
+    now = datetime.now()
+    generated = f"{now.strftime('%B')} {now.day}, {now.year}"
+
+    # --- Contact / signature block, sits at the end of the content ---
+    story.append(Spacer(1, 24))
+    sig = ParagraphStyle('sig', fontName='Helvetica', fontSize=8.5, textColor=MUTED, leading=13)
+    story.append(Paragraph(f"Report generated by Eco Bizzy on {generated}.", sig))
+    story.append(Paragraph("Questions about this report? saajan@ecobizzy.com", sig))
 
     # --- Build with a footer on every page ---
     buf = io.BytesIO()
@@ -433,7 +506,6 @@ def generate_report_pdf(result):
         leftMargin=0.6 * inch, rightMargin=0.6 * inch,
         title=f"Emissions Report - {company}", author="Eco Bizzy",
     )
-    generated = datetime.now().strftime('%B %d, %Y')
 
     def footer(canvas, doc_):
         canvas.saveState()
