@@ -104,6 +104,84 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+
+        .button-secondary {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .button-secondary:hover {
+            background: var(--surface);
+            opacity: 1;
+        }
+
+        .sample-hint {
+            text-align: center;
+            margin-top: 1.25rem;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        .sample-hint button {
+            background: none;
+            border: none;
+            color: var(--text);
+            font: inherit;
+            font-weight: 600;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            cursor: pointer;
+            padding: 0;
+        }
+        .sample-hint button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .period {
+            color: var(--muted);
+            font-size: 0.9rem;
+            margin-bottom: 1.25rem;
+        }
+        .helper {
+            color: var(--muted);
+            font-size: 0.8rem;
+            margin-top: 0.15rem;
+        }
+        .report-actions {
+            margin-top: 1.75rem;
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        /* Methodology disclosure */
+        .method-toggle {
+            background: none;
+            border: none;
+            color: var(--text);
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .method-toggle .chevron { transition: transform 0.2s ease; color: var(--muted); }
+        .method-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+        .method-body { margin-top: 1.25rem; }
+        .method-body h5 {
+            color: var(--text);
+            font-size: 0.9rem;
+            margin-bottom: 0.35rem;
+        }
+        .method-body p {
+            color: var(--muted);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+        .method-body code {
+            color: var(--text);
+            font-size: 0.82rem;
+        }
         
         .loading {
             text-align: center;
@@ -211,10 +289,13 @@
                     <h3>Upload your utility bill</h3>
                     <p>PDF, PNG, or JPEG — drag and drop or click to select</p>
                 </div>
-                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg">
+                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.txt">
                 <button class="button" id="selectBtn">Choose file</button>
                 <div class="file-name" id="fileName"></div>
             </div>
+            <p class="sample-hint">
+                No bill handy? <button id="sampleBtn" type="button">Try with a sample bill →</button>
+            </p>
         </div>
         
         <div class="error" id="error"></div>
@@ -226,28 +307,33 @@
         
         <div class="results" id="results">
             <div class="card">
+                <div class="period" id="period"></div>
                 <div class="metric">
                     <div class="metric-label">Total CO₂e Emissions</div>
                     <div class="metric-value">
-                        <span id="totalEmissions">0.0000</span>
+                        <span id="totalEmissions">—</span>
                         <span class="metric-unit">metric tonnes</span>
                     </div>
                 </div>
-                
+
                 <div class="breakdown">
                     <div class="scope-box">
                         <h4>Scope 1 (Natural Gas)</h4>
-                        <div class="scope-value" id="scope1">0.0000</div>
+                        <div class="scope-value" id="scope1">—</div>
                         <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem;">metric tonnes</p>
                     </div>
                     <div class="scope-box">
                         <h4>Scope 2 (Electricity)</h4>
-                        <div class="scope-value" id="scope2">0.0000</div>
+                        <div class="scope-value" id="scope2">—</div>
                         <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem;">metric tonnes</p>
                     </div>
                 </div>
+
+                <div class="report-actions">
+                    <button class="button" id="downloadBtn">Download Report (PDF)</button>
+                </div>
             </div>
-            
+
             <div class="card">
                 <h3 style="margin-bottom: 1.5rem; color: var(--text);">Bill Details</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
@@ -262,12 +348,22 @@
                     <div>
                         <p style="color: var(--muted); font-size: 0.9rem;">Electricity</p>
                         <p style="color: var(--text); font-weight: 500;" id="kwh">—</p>
+                        <p class="helper" id="kwhHelper"></p>
                     </div>
                     <div>
                         <p style="color: var(--muted); font-size: 0.9rem;">Natural Gas</p>
                         <p style="color: var(--text); font-weight: 500;" id="therms">—</p>
+                        <p class="helper" id="thermsHelper"></p>
                     </div>
                 </div>
+            </div>
+
+            <div class="card">
+                <button class="method-toggle" id="methodToggle" aria-expanded="false">
+                    Methodology &amp; emission factors
+                    <span class="chevron">›</span>
+                </button>
+                <div class="method-body" id="methodBody" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -276,10 +372,21 @@
     const uploadZone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('fileInput');
     const selectBtn = document.getElementById('selectBtn');
+    const sampleBtn = document.getElementById('sampleBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const methodToggle = document.getElementById('methodToggle');
+    const methodBody = document.getElementById('methodBody');
     const loading = document.getElementById('loading');
     const results = document.getElementById('results');
     const error = document.getElementById('error');
     const fileName = document.getElementById('fileName');
+
+    let lastResult = null;  // the current analysis, reused for the PDF download
+
+    // Null-safe number formatting: an em dash for missing data, never a fake 0.
+    const fmt = (n, dp = 2) => (n === null || n === undefined)
+        ? '—'
+        : Number(n).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp });
 
     uploadZone.addEventListener('click', () => fileInput.click());
 
@@ -306,51 +413,145 @@
         }
     });
 
+    // Sample bill: run the full pipeline server-side, no file needed.
+    sampleBtn.addEventListener('click', () => runAnalysis(
+        () => fetch('/api/sample'),
+        'sample bill',
+    ));
+
     async function handleFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        fileName.textContent = `Selected: ${file.name}`;
+        runAnalysis(() => fetch('/api/analyze', { method: 'POST', body: formData }), file.name);
+    }
+
+    // Shared request flow for both upload and sample paths.
+    async function runAnalysis(request, label) {
         error.classList.remove('show');
         results.classList.remove('show');
         loading.style.display = 'block';
-        fileName.textContent = `Selected: ${file.name}`;
-
-        const formData = new FormData();
-        formData.append('file', file);
+        sampleBtn.disabled = true;
 
         try {
-            const response = await fetch('/api/analyze', {
-                method: 'POST',
-                body: formData
-            });
-
+            const response = await request();
             const data = await response.json();
-
             if (!response.ok) {
                 throw new Error(data.error || 'Analysis failed');
             }
-
             displayResults(data);
+            results.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (e) {
-            showError(e.message);
+            showError(`We couldn't read this ${label}. Try a clearer image, or contact saajan@ecobizzy.com`);
         } finally {
             loading.style.display = 'none';
+            sampleBtn.disabled = false;
         }
     }
 
     function displayResults(data) {
-        const total = data.total_co2e_tonnes || 0;
-        const scope1 = data.scope_1?.total_co2e_tonnes || 0;
-        const scope2 = data.scope_2?.total_co2e_tonnes || 0;
+        lastResult = data;
         const bill = data.bill_data || {};
+        const derived = data.derived || {};
 
-        document.getElementById('totalEmissions').textContent = total.toFixed(4);
-        document.getElementById('scope1').textContent = scope1.toFixed(4);
-        document.getElementById('scope2').textContent = scope2.toFixed(4);
+        // Total: an em dash when nothing was extracted, never a misleading 0.00.
+        document.getElementById('totalEmissions').textContent =
+            data.has_data ? fmt(data.total_co2e_tonnes) : '—';
+        document.getElementById('scope1').textContent = fmt(data.scope_1?.total_co2e_tonnes);
+        document.getElementById('scope2').textContent = fmt(data.scope_2?.total_co2e_tonnes);
+
         document.getElementById('companyName').textContent = bill.company_name || '—';
         document.getElementById('account').textContent = bill.account_number || '—';
-        document.getElementById('kwh').textContent = bill.electricity_kwh ? `${bill.electricity_kwh.toLocaleString()} kWh` : '—';
-        document.getElementById('therms').textContent = bill.natural_gas_therms ? `${bill.natural_gas_therms.toLocaleString()} therms` : '—';
 
+        // Reporting period line
+        const period = document.getElementById('period');
+        if (bill.period_start && bill.period_end) {
+            period.textContent = `Reporting period: ${bill.period_start} – ${bill.period_end}`;
+        } else if (bill.statement_date) {
+            period.textContent = `Statement date: ${bill.statement_date}`;
+        } else {
+            period.textContent = '';
+        }
+
+        // Consumption with unit + secondary-unit helper text
+        const kwh = document.getElementById('kwh');
+        const kwhHelper = document.getElementById('kwhHelper');
+        if (bill.electricity_kwh !== null && bill.electricity_kwh !== undefined) {
+            kwh.textContent = `${fmt(bill.electricity_kwh, 0)} kWh`;
+            kwhHelper.textContent = derived.electricity_mwh != null ? `≈ ${fmt(derived.electricity_mwh)} MWh` : '';
+        } else {
+            kwh.textContent = '—';
+            kwhHelper.textContent = '';
+        }
+
+        const therms = document.getElementById('therms');
+        const thermsHelper = document.getElementById('thermsHelper');
+        if (bill.natural_gas_therms !== null && bill.natural_gas_therms !== undefined) {
+            therms.textContent = `${fmt(bill.natural_gas_therms, 0)} therms`;
+            thermsHelper.textContent = derived.natural_gas_mmbtu != null ? `≈ ${fmt(derived.natural_gas_mmbtu, 0)} MMBtu` : '';
+        } else {
+            therms.textContent = '—';
+            thermsHelper.textContent = '';
+        }
+
+        renderMethodology(data.methodology);
         results.classList.add('show');
     }
+
+    function renderMethodology(m) {
+        if (!m) { methodBody.innerHTML = ''; return; }
+        const factors = (block) =>
+            block.factors.map(f => `${f.gas}: ${f.value} ${f.unit}`).join(', ');
+        const g = m.gwp;
+        methodBody.innerHTML = `
+            <h5>Electricity — ${m.electricity.scope} (${m.electricity.method})</h5>
+            <p>${m.electricity.source}<br><code>${factors(m.electricity)}</code></p>
+            <h5>Natural gas — ${m.natural_gas.scope} (${m.natural_gas.method})</h5>
+            <p>${m.natural_gas.source}<br><code>${factors(m.natural_gas)}</code></p>
+            <h5>Global Warming Potentials (${g.basis})</h5>
+            <p><code>CO₂ = ${g.CO2}, CH₄ = ${g.CH4}, N₂O = ${g.N2O}</code></p>`;
+    }
+
+    methodToggle.addEventListener('click', () => {
+        const open = methodToggle.getAttribute('aria-expanded') === 'true';
+        methodToggle.setAttribute('aria-expanded', String(!open));
+        methodBody.style.display = open ? 'none' : 'block';
+    });
+
+    // Download the PDF report for the current analysis.
+    downloadBtn.addEventListener('click', async () => {
+        if (!lastResult) return;
+        const original = downloadBtn.textContent;
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = 'Generating…';
+        try {
+            const response = await fetch('/api/report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(lastResult),
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || 'Could not generate report');
+            }
+            const blob = await response.blob();
+            const company = (lastResult.bill_data?.company_name || 'Report')
+                .replace(/[^a-z0-9 \-_]/gi, '').trim().replace(/\s+/g, '-') || 'Report';
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Emissions-Report-${company}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            showError(e.message);
+        } finally {
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = original;
+        }
+    });
 
     function showError(message) {
         error.textContent = message;
