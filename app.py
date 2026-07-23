@@ -309,7 +309,7 @@ def generate_report_pdf(result):
         from reportlab.lib import colors
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.platypus import (
-            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image,
+            SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether,
         )
     except ImportError as e:
         raise RuntimeError("reportlab is not installed. Run: pip install reportlab") from e
@@ -462,32 +462,31 @@ def generate_report_pdf(result):
     scope_block("Scope 2 - Purchased Electricity (location-based)", scope2, e_usage)
     scope_block("Scope 1 - Natural Gas Combustion", scope1, g_usage)
 
-    # --- Methodology ---
-    story.append(Paragraph("Methodology", h2))
+    # --- Methodology (wrapped in KeepTogether so the heading never orphans at
+    # the bottom of a page, split from the body that belongs with it) ---
     m = result.get('methodology') or METHODOLOGY
     elec, gas, gwp = m['electricity'], m['natural_gas'], m['gwp']
 
     def factor_line(block):
         return ", ".join(f"{f['gas']}: {f['value']} {f['unit']}" for f in block['factors'])
 
-    story.append(Paragraph(
-        f"<b>Electricity (Scope 2):</b> {elec['source']}. {factor_line(elec)}.", body))
-    story.append(Spacer(1, 5))
-    story.append(Paragraph(
-        f"<b>Natural gas (Scope 1):</b> {gas['source']}. {factor_line(gas)}.", body))
-    story.append(Spacer(1, 5))
-    story.append(Paragraph(
-        f"<b>Global Warming Potentials ({gwp['basis']}):</b> "
-        f"CO2 = {gwp['CO2']}, CH4 = {gwp['CH4']}, N2O = {gwp['N2O']}.", body))
-    story.append(Spacer(1, 5))
-    story.append(Paragraph(
-        "CO2e = sum of (activity x emission factor x GWP). Electricity uses the EPA "
-        "eGRID CAMX subregion (California) location-based method.", small))
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(
-        "This report follows the GHG Protocol Corporate Accounting and Reporting Standard.",
-        ParagraphStyle('ghg', fontName='Helvetica-Oblique', fontSize=8.5,
-                       textColor=MUTED, leading=12)))
+    method_block = [
+        Paragraph("Methodology", h2),
+        Paragraph(f"<b>Electricity (Scope 2):</b> {elec['source']}. {factor_line(elec)}.", body),
+        Spacer(1, 5),
+        Paragraph(f"<b>Natural gas (Scope 1):</b> {gas['source']}. {factor_line(gas)}.", body),
+        Spacer(1, 5),
+        Paragraph(f"<b>Global Warming Potentials ({gwp['basis']}):</b> "
+                  f"CO2 = {gwp['CO2']}, CH4 = {gwp['CH4']}, N2O = {gwp['N2O']}.", body),
+        Spacer(1, 5),
+        Paragraph("CO2e = sum of (activity x emission factor x GWP). Electricity uses the EPA "
+                  "eGRID CAMX subregion (California) location-based method.", small),
+        Spacer(1, 8),
+        Paragraph("This report follows the GHG Protocol Corporate Accounting and Reporting Standard.",
+                  ParagraphStyle('ghg', fontName='Helvetica-Oblique', fontSize=8.5,
+                                 textColor=MUTED, leading=12)),
+    ]
+    story.append(KeepTogether(method_block))
 
     now = datetime.now()
     generated = f"{now.strftime('%B')} {now.day}, {now.year}"
